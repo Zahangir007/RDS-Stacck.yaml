@@ -1,2 +1,66 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RDS PostgreSQL in private subnets (Multi-AZ optional).
+
+Parameters:
+  DBUsername:
+    Type: String
+    Default: pi_user
+  DBPasswordSecretArn:
+    Type: String
+    Description: ARN of Secrets Manager secret that stores the DB password.
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+  DBName:
+    Type: String
+    Default: pi_database
+  DBSubnet1:
+    Type: AWS::EC2::Subnet::Id
+  DBSubnet2:
+    Type: AWS::EC2::Subnet::Id
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref DBSubnet1
+        - !Ref DBSubnet2
+      Tags: [{ Key: Name, Value: pi-db-subnet-group }]
+
+  PostgresDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: pi-postgres-db
+      Engine: postgres
+      EngineVersion: "13.7"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword:
+        Fn::Join:
+          - ''
+          - - '{{resolve:secretsmanager:'
+            - !Ref DBPasswordSecretArn
+            - ':SecretString:password}}'
+      DBName: !Ref DBName
+      MultiAZ: true
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      Tags: [{ Key: Name, Value: pi-rds }]
+
+Outputs:
+  DBEndpoint:
+    Value: !GetAtt PostgresDB.Endpoint.Address
+  DBPort:
+    Value: !GetAtt PostgresDB.Endpoint.Port
